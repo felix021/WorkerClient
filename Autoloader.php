@@ -11,7 +11,7 @@
  * @link http://www.workerman.net/
  * @license http://www.opensource.org/licenses/mit-license.php MIT License
  */
-namespace Workerman;
+namespace Workerclient;
 
 /**
  * 自动加载类
@@ -41,10 +41,10 @@ class Autoloader
     {
         // 相对路径
         $class_path = str_replace('\\', DIRECTORY_SEPARATOR ,$name);
-        // 如果是Workerman命名空间，则在当前目录寻找类文件
-        if(strpos($name, 'Workerman\\') === 0)
+        // 如果是WorkerClient命名空间，则在当前目录寻找类文件
+        if(strpos($name, 'WorkerClient\\') === 0)
         {
-            $class_file = __DIR__.substr($class_path, strlen('Workerman')).'.php';
+            $class_file = __DIR__.substr($class_path, strlen('WorkerClient')).'.php';
         }
         else 
         {
@@ -74,4 +74,4 @@ class Autoloader
     }
 }
 // 设置类自动加载回调函数
-spl_autoload_register('\Workerman\Autoloader::loadByNamespace');
+spl_autoload_register('\WorkerClient\Autoloader::loadByNamespace');

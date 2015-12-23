@@ -1,6 +1,6 @@
 <?php
 /**
- * This file is part of workerman.
+ * This file is part of workerclient.
  *
  * Licensed under The MIT License
  * For full copyright and license information, please see the MIT-LICENSE.txt
@@ -10,18 +10,19 @@
  * @copyright walkor<walkor@workerman.net>
  * @link http://www.workerman.net/
  * @license http://www.opensource.org/licenses/mit-license.php MIT License
+ *
+ * @edited by: felix021<felix021@gmail.com>
  */
-namespace Workerman;
+namespace WorkerClient;
 
 require_once __DIR__.'/Lib/Constants.php';
 
-use \Workerman\Events\Libevent;
-use \Workerman\Events\Select;
-use \Workerman\Events\EventInterface;
-use \Workerman\Connection\ConnectionInterface;
-use \Workerman\Connection\TcpConnection;
-use \Workerman\Connection\UdpConnection;
-use \Workerman\Lib\Timer;
+use \WorkerClient\Events\Libevent;
+use \WorkerClient\Events\Select;
+use \WorkerClient\Events\EventInterface;
+use \WorkerClient\Connection\ConnectionInterface;
+use \WorkerClient\Connection\TcpConnection;
+use \WorkerClient\Lib\Timer;
 use \Exception;
 
 /**
@@ -72,12 +73,6 @@ class Worker
      * @var int
      */
     const DEFAUL_BACKLOG = 1024;
-    
-    /**
-     * udp最大包长
-     * @var int
-     */
-    const MAX_UDP_PACKEG_SIZE = 65535;
     
     /**
      * worker id
@@ -173,16 +168,10 @@ class Worker
     public $onWorkerReload = null;
     
     /**
-     * 传输层协议
-     * @var string
-     */
-    public $transport = 'tcp';
-    
-    /**
      * 所有的客户端连接
      * @var array
      */
-    public $connections = array();
+    public $connection = null;
     
     /**
      * 应用层协议，由初始化worker时指定
@@ -213,16 +202,16 @@ class Worker
     
     /**
      * pid文件的路径及名称
-     * 例如 Worker::$pidFile = '/tmp/workerman.pid';
+     * 例如 Worker::$pidFile = '/tmp/workerclient.pid';
      * 注意 此属性一般不必手动设置，默认会放到php临时目录中
      * @var string
      */
     public static $pidFile = '';
     
     /**
-     * 日志目录，默认在workerman根目录下，与Applications同级
+     * 日志目录，默认在workerclient根目录下，与Applications同级
      * 可以手动设置
-     * 例如 Worker::$logFile = '/tmp/workerman.log';
+     * 例如 Worker::$logFile = '/tmp/workerclient.log';
      * @var mixed
      */
     public static $logFile = '';
@@ -251,6 +240,11 @@ class Worker
      * @var string
      */
     protected $_socketName = '';
+
+    public $scheme  = null;
+    public $host    = null;
+    public $port    = null;
+    public $path    = null;
     
     /**
      * socket的上下文，具体选项设置可以在初始化worker时传递
@@ -324,7 +318,7 @@ class Worker
     
     /**
      * 全局统计数据，用于在运行 status 命令时展示
-     * 统计的内容包括 workerman启动的时间戳及每组worker进程的退出次数及退出状态码
+     * 统计的内容包括 workerclient启动的时间戳及每组worker进程的退出次数及退出状态码
      * @var array
      */
     protected static $_globalStatistics = array(
@@ -376,16 +370,17 @@ class Worker
         // 没有设置日志文件，则生成一个默认值
         if(empty(self::$logFile))
         {
-            self::$logFile = __DIR__ . '/../workerman.log';
+            $pi = pathinfo(self::$_startFile);
+            self::$logFile = sprintf("%s/%s_%s.log", $pi['dirname'], $pi['filename'], $pi['extension']);
         }
         // 标记状态为启动中
         self::$_status = self::STATUS_STARTING;
         // 启动时间戳
-        self::$_globalStatistics['start_timestamp'] = time();
+        self::$_globalStatistics['start_timestamp'] = microtime(true);
         // 设置status文件位置
-        self::$_statisticsFile = sys_get_temp_dir().'/workerman.status';
+        self::$_statisticsFile = sys_get_temp_dir().'/workerclient.status';
         // 尝试设置进程名称（需要php>=5.5或者安装了proctitle扩展）
-        self::setProcessTitle('WorkerMan: master process  start_file=' . self::$_startFile);
+        self::setProcessTitle('WorkerClient: master process  start_file=' . self::$_startFile);
         // 初始化id
         self::initId();
         // 初始化定时器
@@ -428,12 +423,6 @@ class Worker
             {
                 self::$_maxUserNameLength = $user_name_length;
             }
-            // 如果端口不可复用，则直接在主进程就监听
-            if(!$worker->reusePort)
-            {
-                // 监听端口
-                $worker->listen();
-            }
         }
     }
     
@@ -465,8 +454,8 @@ class Worker
      */
     protected static function displayUI()
     {
-        echo "\033[1A\n\033[K-----------------------\033[47;30m WORKERMAN \033[0m-----------------------------\n\033[0m";
-        echo 'Workerman version:' , Worker::VERSION , "          PHP version:",PHP_VERSION,"\n";
+        echo "\033[1A\n\033[K-----------------------\033[47;30m WORKERCLIENT \033[0m-----------------------------\n\033[0m";
+        echo 'WorkerClient version:' , Worker::VERSION , "          PHP version:",PHP_VERSION,"\n";
         echo "------------------------\033[47;30m WORKERS \033[0m-------------------------------\n";
         echo "\033[47;30muser\033[0m",str_pad('', self::$_maxUserNameLength+2-strlen('user')), "\033[47;30mworker\033[0m",str_pad('', self::$_maxWorkerNameLength+2-strlen('worker')), "\033[47;30mlisten\033[0m",str_pad('', self::$_maxSocketNameLength+2-strlen('listen')), "\033[47;30mprocesses\033[0m \033[47;30m","status\033[0m\n";
         /** @var static $worker */
@@ -521,7 +510,7 @@ class Worker
                 $mode = 'in DEBUG mode';
             }
         }
-        self::log("Workerman[$start_file] $command $mode");
+        self::log("WorkerClient[$start_file] $command $mode");
         
         // 检查主进程是否在运行
         $master_pid = @file_get_contents(self::$pidFile);
@@ -530,13 +519,13 @@ class Worker
         {
             if($command === 'start')
             {
-                self::log("Workerman[$start_file] already running");
+                self::log("WorkerClient[$start_file] already running");
                 exit;
             }
         }
         elseif($command !== 'start' && $command !== 'restart')
         {
-            self::log("Workerman[$start_file] not run");
+            self::log("WorkerClient[$start_file] not run");
         }
         
         // 根据命令做相应处理
@@ -546,14 +535,14 @@ class Worker
                 exec("ps aux | grep $start_file | grep -v grep | awk '{print $2}' |xargs kill -SIGINT");
                 exec("ps aux | grep $start_file | grep -v grep | awk '{print $2}' |xargs kill -SIGKILL");
                 break;
-            // 启动 workerman
+            // 启动 workerclient
             case 'start':
                 if($command2 === '-d')
                 {
                     Worker::$daemonize = true;
                 }
                 break;
-            // 显示 workerman 运行状态
+            // 显示 workerclient 运行状态
             case 'status':
                 // 尝试删除统计文件，避免脏数据
                 if(is_file(self::$_statisticsFile))
@@ -568,11 +557,11 @@ class Worker
                 // 展示状态
                 readfile(self::$_statisticsFile);
                 exit(0);
-            // 重启 workerman
+            // 重启 workerclient
             case 'restart':
             // 停止 workeran
             case 'stop':
-                self::log("Workerman[$start_file] is stoping ...");
+                self::log("WorkerClient[$start_file] is stoping ...");
                 // 想主进程发送SIGINT信号，主进程会向所有子进程发送SIGINT信号
                 $master_pid && posix_kill($master_pid, SIGINT);
                 // 如果 $timeout 秒后主进程没有退出则展示失败界面
@@ -587,13 +576,13 @@ class Worker
                         // 检查是否超过$timeout时间
                         if(time() - $start_time >= $timeout)
                         {
-                            self::log("Workerman[$start_file] stop fail");
+                            self::log("WorkerClient[$start_file] stop fail");
                             exit;
                         }
                         usleep(10000);
                         continue;
                     }
-                    self::log("Workerman[$start_file] stop success");
+                    self::log("WorkerClient[$start_file] stop success");
                     // 是restart命令
                     if($command === 'stop')
                     {
@@ -607,10 +596,10 @@ class Worker
                     break;
                 }
                 break;
-            // 平滑重启 workerman
+            // 平滑重启 workerclient
             case 'reload':
                 posix_kill($master_pid, SIGUSR1);
-                self::log("Workerman[$start_file] reload");
+                self::log("WorkerClient[$start_file] reload");
                 exit;
             // 未知命令
             default :
@@ -625,11 +614,11 @@ class Worker
     protected static function installSignal()
     {
         // stop
-        pcntl_signal(SIGINT,  array('\Workerman\Worker', 'signalHandler'), false);
+        pcntl_signal(SIGINT,  array('\WorkerClient\Worker', 'signalHandler'), false);
         // reload
-        pcntl_signal(SIGUSR1, array('\Workerman\Worker', 'signalHandler'), false);
+        pcntl_signal(SIGUSR1, array('\WorkerClient\Worker', 'signalHandler'), false);
         // status
-        pcntl_signal(SIGUSR2, array('\Workerman\Worker', 'signalHandler'), false);
+        pcntl_signal(SIGUSR2, array('\WorkerClient\Worker', 'signalHandler'), false);
         // ignore
         pcntl_signal(SIGPIPE, SIG_IGN, false);
     }
@@ -647,11 +636,11 @@ class Worker
         // uninstall  status signal handler
         pcntl_signal(SIGUSR2, SIG_IGN, false);
         // reinstall stop signal handler
-        self::$globalEvent->add(SIGINT, EventInterface::EV_SIGNAL, array('\Workerman\Worker', 'signalHandler'));
+        self::$globalEvent->add(SIGINT, EventInterface::EV_SIGNAL, array('\WorkerClient\Worker', 'signalHandler'));
         //  uninstall  reload signal handler
-        self::$globalEvent->add(SIGUSR1, EventInterface::EV_SIGNAL,array('\Workerman\Worker', 'signalHandler'));
+        self::$globalEvent->add(SIGUSR1, EventInterface::EV_SIGNAL,array('\WorkerClient\Worker', 'signalHandler'));
         // uninstall  status signal handler
-        self::$globalEvent->add(SIGUSR2, EventInterface::EV_SIGNAL, array('\Workerman\Worker', 'signalHandler'));
+        self::$globalEvent->add(SIGUSR2, EventInterface::EV_SIGNAL, array('\WorkerClient\Worker', 'signalHandler'));
     }
     
     /**
@@ -820,11 +809,9 @@ class Worker
         // 子进程运行
         elseif(0 === $pid)
         {
-            // 如果设置了端口复用，则在子进程执行监听
-            if($worker->reusePort)
-            {
-                $worker->listen();
-            }
+            //连接Server
+            $worker->connect();
+
             // 启动过程中尝试重定向标准输出
             if(self::$_status === self::STATUS_STARTING)
             {
@@ -833,7 +820,7 @@ class Worker
             self::$_pidMap = array();
             self::$_workers = array($worker->workerId => $worker);
             Timer::delAll();
-            self::setProcessTitle('WorkerMan: worker process  ' . $worker->name . ' ' . $worker->getSocketName());
+            self::setProcessTitle('WorkerClient: worker process  ' . $worker->name . ' ' . $worker->getSocketName());
             self::setProcessUser($worker->user);
             $worker->id = $id;
             $worker->run();
@@ -988,7 +975,8 @@ class Worker
     protected static function exitAndClearAll()
     {
         @unlink(self::$pidFile);
-        self::log("Workerman[".basename(self::$_startFile)."] has been stopped");
+        $seconds = self::getDuration(true);
+        self::log("WorkerClient[".basename(self::$_startFile)."] has been stopped, time: {$seconds} seconds.");
         exit(0);
     }
     
@@ -1004,7 +992,7 @@ class Worker
             // 设置为平滑重启状态
             if(self::$_status !== self::STATUS_RELOADING && self::$_status !== self::STATUS_SHUTDOWN)
             {
-                self::log("Workerman[".basename(self::$_startFile)."] reloading");
+                self::log("WorkerClient[".basename(self::$_startFile)."] reloading");
                 self::$_status = self::STATUS_RELOADING;
             }
             
@@ -1076,7 +1064,7 @@ class Worker
         // 主进程部分
         if(self::$_masterPid === posix_getpid())
         {
-            self::log("Workerman[".basename(self::$_startFile)."] Stopping ...");
+            self::log("WorkerClient[".basename(self::$_startFile)."] Stopping ...");
             $worker_pid_array = self::getAllWorkerPids();
             // 向所有子进程发送SIGINT信号，表明关闭服务
             foreach($worker_pid_array as $worker_pid)
@@ -1109,8 +1097,8 @@ class Worker
         {
             $loadavg = sys_getloadavg();
             file_put_contents(self::$_statisticsFile, "---------------------------------------GLOBAL STATUS--------------------------------------------\n");
-            file_put_contents(self::$_statisticsFile, 'Workerman version:' . Worker::VERSION . "          PHP version:".PHP_VERSION."\n", FILE_APPEND);
-            file_put_contents(self::$_statisticsFile, 'start time:'. date('Y-m-d H:i:s', self::$_globalStatistics['start_timestamp']).'   run ' . floor((time()-self::$_globalStatistics['start_timestamp'])/(24*60*60)). ' days ' . floor(((time()-self::$_globalStatistics['start_timestamp'])%(24*60*60))/(60*60)) . " hours   \n", FILE_APPEND);
+            file_put_contents(self::$_statisticsFile, 'WorkerClient version:' . Worker::VERSION . "          PHP version:".PHP_VERSION."\n", FILE_APPEND);
+            file_put_contents(self::$_statisticsFile, 'start time:'. date('Y-m-d H:i:s', intval(self::$_globalStatistics['start_timestamp'])).'   run ' . floor(self::getDuration()/(24*60*60)). ' days ' . floor((self::getDuration()%(24*60*60))/(60*60)) . " hours   \n", FILE_APPEND);
             file_put_contents(self::$_statisticsFile, 'load average: ' . implode(", ", $loadavg) . "\n", FILE_APPEND);
             file_put_contents(self::$_statisticsFile,  count(self::$_pidMap) . ' workers       ' . count(self::getAllWorkerPids())." processes\n", FILE_APPEND);
             file_put_contents(self::$_statisticsFile, str_pad('worker_name', self::$_maxWorkerNameLength) . " exit_status     exit_count\n", FILE_APPEND);
@@ -1261,12 +1249,12 @@ class Worker
     }
     
     /**
-     * 监听端口
+     * 连接服务器
      * @throws Exception
      */
-    public function listen()
+    public function connect()
     {
-        if(!$this->_socketName || $this->_mainSocket)
+        if(!$this->_socketName)
         {
             return;
         }
@@ -1274,40 +1262,41 @@ class Worker
         // 设置自动加载根目录  
         Autoloader::setRootPath($this->_appInitPath);
 
-        // 获得应用层通讯协议以及监听的地址
-        list($scheme, $address) = explode(':', $this->_socketName, 2);
-        // 如果有指定应用层协议，则检查对应的协议类是否存在
-        if($scheme != 'tcp' && $scheme != 'udp')
+        // 获得应用层通讯协议以及目标服务器的地址
+        $url = parse_url($this->_socketName);
+        if (false === $url) {
+            throw new Exception("invalid socketName");
+        }
+
+        $this->scheme   = $scheme = @$url['scheme'];
+        $this->host     = @$url['host'];
+        $this->port     = @$url['port'];
+        $this->path     = @$url['path'];
+
+        //如果有指定应用层协议，则检查对应的协议类是否存在
+        if($scheme)
         {
             $scheme = ucfirst($scheme);
             $this->_protocol = '\\Protocols\\'.$scheme;
             if(!class_exists($this->_protocol))
             {
-                $this->_protocol = "\\Workerman\\Protocols\\$scheme";
+                $this->_protocol = "\\WorkerClient\\Protocols\\$scheme";
                 if(!class_exists($this->_protocol))
                 {
                     throw new Exception("class \\Protocols\\$scheme not exist");
                 }
             }
         }
-        elseif($scheme === 'udp')
-        {
-            $this->transport = 'udp';
-        }
-        
+
         // flag
-        $flags =  $this->transport === 'udp' ? STREAM_SERVER_BIND : STREAM_SERVER_BIND | STREAM_SERVER_LISTEN;
         $errno = 0;
         $errmsg = '';
-        // 如果设置了端口复用，则设置SO_REUSEPORT选项为1
-        if($this->reusePort)
-        {
-            stream_context_set_option($this->_context, 'socket', 'so_reuseport', 1);
-        }
-        $this->_mainSocket = stream_socket_server($this->transport.":".$address, $errno, $errmsg, $flags, $this->_context);
+        $this->_mainSocket = @fsockopen($this->host, $this->port, $errno, $errmsg);
         if(!$this->_mainSocket)
         {
-            throw new Exception($errmsg);
+            sleep(1);
+            self::log("connect to server failed");
+            throw new Exception($errmsg, $errno);
         }
         
         // 尝试打开tcp的keepalive，关闭TCP Nagle算法
@@ -1320,19 +1309,6 @@ class Worker
         
         // 设置非阻塞
         stream_set_blocking($this->_mainSocket, 0);
-        
-        // 放到全局事件轮询中监听_mainSocket可读事件（客户端连接事件）
-        if(self::$globalEvent)
-        {
-            if($this->transport !== 'udp')
-            {
-                self::$globalEvent->add($this->_mainSocket, EventInterface::EV_READ, array($this, 'acceptConnection'));
-            }
-            else
-            {
-                self::$globalEvent->add($this->_mainSocket,  EventInterface::EV_READ, array($this, 'acceptUdpConnection'));
-            }
-        }
     }
     
     /**
@@ -1353,7 +1329,7 @@ class Worker
         self::$_status = self::STATUS_RUNNING;
         
         // 注册进程退出回调，用来检查是否有错误
-        register_shutdown_function(array("\\Workerman\\Worker", 'checkErrors'));
+        register_shutdown_function(array("\\WorkerClient\\Worker", 'checkErrors'));
         
         // 设置自动加载根目录
         Autoloader::setRootPath($this->_appInitPath);
@@ -1369,18 +1345,7 @@ class Worker
             {
                 self::$globalEvent = new Select();
             }
-            // 监听_mainSocket上的可读事件（客户端连接事件）
-            if($this->_socketName)
-            {
-                if($this->transport !== 'udp')
-                {
-                    self::$globalEvent->add($this->_mainSocket, EventInterface::EV_READ, array($this, 'acceptConnection'));
-                }
-                else
-                {
-                    self::$globalEvent->add($this->_mainSocket,  EventInterface::EV_READ, array($this, 'acceptUdpConnection'));
-                }
-            }
+            $this->addConnection();
         }
         
         // 重新安装事件处理函数，使用全局事件轮询监听信号事件
@@ -1416,23 +1381,14 @@ class Worker
     }
 
     /**
-     * 接收一个客户端连接
-     * @param resource $socket
+     * 连接服务器
      * @return void
      */
-    public function acceptConnection($socket)
+    public function addConnection()
     {
-        // 获得客户端连接
-        $new_socket = @stream_socket_accept($socket, 0, $remote_address);
-        // 惊群现象，忽略
-        if(false === $new_socket)
-        {
-            return;
-        }
-        
         // 初始化连接对象
-        $connection = new TcpConnection($new_socket, $remote_address);
-        $this->connections[$connection->id] = $connection;
+        $connection = new TcpConnection($this->_mainSocket, $this->host . ':' . $this->port);
+        $this->connection = $connection;
         $connection->worker = $this;
         $connection->protocol = $this->_protocol;
         $connection->onMessage = $this->onMessage;
@@ -1456,38 +1412,15 @@ class Worker
         }
     }
 
-    /**
-     * 处理udp连接（udp其实是无连接的，这里为保证和tcp连接接口一致）
-     *
-     * @param resource $socket
-     * @return bool
-     */
-    public function acceptUdpConnection($socket)
+    public static function getDuration($accurate=false)
     {
-        $recv_buffer = stream_socket_recvfrom($socket , self::MAX_UDP_PACKEG_SIZE, 0, $remote_address);
-        if(false === $recv_buffer || empty($remote_address))
-        {
-            return false;
+        $seconds = microtime(true) - self::$_globalStatistics['start_timestamp'];
+        if (!$accurate) {
+            $seconds = intval($seconds);
         }
-        // 模拟一个连接对象
-        $connection = new UdpConnection($socket, $remote_address);
-        if($this->onMessage)
-        {
-            if($this->_protocol)
-            {
-                /** @var \Workerman\Protocols\ProtocolInterface $parser */
-                $parser = $this->_protocol;
-                $recv_buffer = $parser::decode($recv_buffer, $connection);
-            }
-            ConnectionInterface::$statistics['total_request']++;
-            try
-            {
-               call_user_func($this->onMessage, $connection, $recv_buffer);
-            }
-            catch(Exception $e)
-            {
-                ConnectionInterface::$statistics['throw_exception']++;
-            }
+        else {
+            $seconds = round($seconds, 6);
         }
+        return $seconds;
     }
 }

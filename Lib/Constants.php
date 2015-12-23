@@ -23,6 +23,6 @@ ini_set('display_errors', 'on');
 error_reporting(E_ALL);
 
 // 连接失败
-define('WORKERMAN_CONNECT_FAIL', 1);
+define('WORKERCLIENT_CONNECT_FAIL', 1);
 // 发送失败
-define('WORKERMAN_SEND_FAIL', 2);
+define('WORKERCLIENT_SEND_FAIL', 2);

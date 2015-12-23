@@ -11,9 +11,9 @@
  * @link http://www.workerman.net/
  * @license http://www.opensource.org/licenses/mit-license.php MIT License
  */
-namespace Workerman\Protocols;
+namespace WorkerClient\Protocols;
 
-use \Workerman\Connection\ConnectionInterface;
+use \WorkerClient\Connection\ConnectionInterface;
 
 /**
  * Protocol interface
@@ -33,7 +33,7 @@ interface ProtocolInterface
     
     /**
      * 用于请求解包
-     * input返回值大于0，并且WorkerMan收到了足够的数据，则自动调用decode
+     * input返回值大于0，并且WorkerClient收到了足够的数据，则自动调用decode
      * 然后触发onMessage回调，并将decode解码后的数据传递给onMessage回调的第二个参数
      * 也就是说当收到完整的客户端请求时，会自动调用decode解码，无需业务代码中手动调用
      * @param ConnectionInterface $connection

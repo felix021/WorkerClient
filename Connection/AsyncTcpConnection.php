@@ -11,10 +11,10 @@
  * @link http://www.workerman.net/
  * @license http://www.opensource.org/licenses/mit-license.php MIT License
  */
-namespace Workerman\Connection;
+namespace WorkerClient\Connection;
 
-use Workerman\Events\EventInterface;
-use Workerman\Worker;
+use WorkerClient\Events\EventInterface;
+use WorkerClient\Worker;
 use \Exception;
 
 /**
@@ -50,7 +50,7 @@ class AsyncTcpConnection extends TcpConnection
             $this->protocol = '\\Protocols\\'.$scheme;
             if(!class_exists($this->protocol))
             {
-                $this->protocol = '\\Workerman\\Protocols\\' . $scheme;
+                $this->protocol = '\\WorkerClient\\Protocols\\' . $scheme;
                 if(!class_exists($this->protocol))
                 {
                     throw new Exception("class \\Protocols\\$scheme not exist");
@@ -72,7 +72,7 @@ class AsyncTcpConnection extends TcpConnection
         if(!$this->_socket)
         {
             $this->_status = self::STATUS_CLOSED;
-            $this->emitError(WORKERMAN_CONNECT_FAIL, $errstr);
+            $this->emitError(WORKERCLIENT_CONNECT_FAIL, $errstr);
             return;
         }
         // 监听连接可写事件（可写意味着连接已经建立或者已经出错）
@@ -141,7 +141,7 @@ class AsyncTcpConnection extends TcpConnection
         else
         {
             // 连接未建立成功
-            $this->emitError(WORKERMAN_CONNECT_FAIL, 'connect fail');
+            $this->emitError(WORKERCLIENT_CONNECT_FAIL, 'connect fail');
             // 触发onClsoe
             $this->destroy();
             // 清理onConnect回调

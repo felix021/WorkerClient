@@ -11,39 +11,28 @@
  * @link http://www.workerman.net/
  * @license http://www.opensource.org/licenses/mit-license.php MIT License
  */
-namespace Workerman\Protocols;
-use \Workerman\Connection\TcpConnection;
+namespace WorkerClient\Protocols;
+use \WorkerClient\Connection\TcpConnection;
 
 /**
- * Text协议
+ * Redis协议
  * 以换行为请求结束标记
- * @author walkor <walkor@workerman.net>
+ * @author felix021 <felix021@gmail.com>
  */
-class Text
+class Redis
 {
     /**
      * 检查包的完整性
      * 如果能够得到包长，则返回包的长度，否则返回0继续等待数据
      * @param string $buffer
      */
-    public static function input($buffer ,TcpConnection $connection)
+    public static function input($buffer, TcpConnection $connection)
     {
-        // 由于没有包头，无法预先知道包长，不能无限制的接收数据，
-        // 所以需要判断当前接收的数据是否超过限定值
-        if(strlen($buffer)>=TcpConnection::$maxPackageSize)
-        {
-            $connection->close();
+        $lines = explode("\n", $buffer);
+        if (count($lines) < 5) {
             return 0;
         }
-        // 获得换行字符"\n"位置
-        $pos = strpos($buffer, "\n");
-        // 没有换行符，无法得知包长，返回0继续等待数据
-        if($pos === false)
-        {
-            return 0;
-        }
-        // 有换行符，返回当前包长，包含换行符
-        return $pos+1;
+        return strlen(join("\n", $lines));
     }
     
     /**
@@ -53,8 +42,7 @@ class Text
      */
     public static function encode($buffer)
     {
-        // 加上换行
-        return $buffer."\n";
+        return $buffer;
     }
     
     /**
@@ -65,7 +53,8 @@ class Text
      */
     public static function decode($buffer)
     {
-        // 去掉换行
-        return trim($buffer);
+        $lines = explode("\n", $buffer);
+        $data_len = intval(substr($lines[3], 1));
+        return substr($lines[4], 0, $data_len);
     }
 }

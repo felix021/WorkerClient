@@ -1,25 +1,17 @@
 {
-    "name"  : "workerman/workerman",
+    "name"  : "felix021/WorkerClient",
     "type"  : "project",
     "keywords": ["event-loop", "asynchronous"],
-    "homepage": "http://www.workerman.net",
     "license" : "MIT",
     "description": "An asynchronous event driven PHP framework for easily building fast, scalable network applications.",
     "authors" : [
         {
-            "name"      : "walkor",
-            "email"     : "walkor@workerman.net",
-            "homepage"  : "http://www.workerman.net",	
+            "name"      : "felix021",
+            "email"     : "felix021@gmail.com",
+            "homepage"  : "http://www.felix021.com",	
             "role": "Developer"
         }
     ],
-    "support" : {
-        "email" : "walkor@workerman.net",
-        "issues": "https://github.com/walkor/workerman/issues",
-        "forum" : "http://wenda.workerman.net/",
-        "wiki"  : "http://doc3.workerman.net/index.html",
-        "source": "https://github.com/walkor/workerman"
-    },
     "require": {
         "php": ">=5.3"
     },
@@ -27,7 +19,7 @@
 	"ext-libevent": "For better performance."
     },
     "autoload": {
-        "psr-4": {"Workerman\\": "./"}
+        "psr-4": {"WorkerClient\\": "./"}
     },
     "minimum-stability":"dev"
 }

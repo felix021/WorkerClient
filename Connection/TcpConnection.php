@@ -11,10 +11,10 @@
  * @link http://www.workerman.net/
  * @license http://www.opensource.org/licenses/mit-license.php MIT License
  */
-namespace Workerman\Connection;
+namespace WorkerClient\Connection;
 
-use Workerman\Events\EventInterface;
-use Workerman\Worker;
+use WorkerClient\Events\EventInterface;
+use WorkerClient\Worker;
 use \Exception;
 
 /**
@@ -85,7 +85,7 @@ class TcpConnection extends ConnectionInterface
     
     /**
      * 使用的应用层协议，是协议类的名称
-     * 值类似于 Workerman\\Protocols\\Http
+     * 值类似于 WorkerClient\\Protocols\\Http
      * @var string
      */
     public $protocol = '';
@@ -128,7 +128,7 @@ class TcpConnection extends ConnectionInterface
     /**
      * 能接受的最大数据包，为了防止恶意攻击，当数据包的大小大于此值时执行断开
      * 注意 此值可以动态设置
-     * 例如 Workerman\Connection\TcpConnection::$maxPackageSize=1024000;
+     * 例如 WorkerClient\Connection\TcpConnection::$maxPackageSize=1024000;
      * @var int
      */
     public static $maxPackageSize = 10485760;
@@ -258,7 +258,7 @@ class TcpConnection extends ConnectionInterface
                     {
                         try
                         {
-                            call_user_func($this->onError, $this, WORKERMAN_SEND_FAIL, 'client closed');
+                            call_user_func($this->onError, $this, WORKERCLIENT_SEND_FAIL, 'client closed');
                         }
                         catch(Exception $e)
                         {
@@ -290,7 +290,7 @@ class TcpConnection extends ConnectionInterface
                 {
                     try
                     {
-                        call_user_func($this->onError, $this, WORKERMAN_SEND_FAIL, 'send buffer full and drop package');
+                        call_user_func($this->onError, $this, WORKERCLIENT_SEND_FAIL, 'send buffer full and drop package');
                     }
                     catch(Exception $e)
                     {
@@ -635,7 +635,7 @@ class TcpConnection extends ConnectionInterface
         // 从连接中删除
         if($this->worker)
         {
-            unset($this->worker->connections[$this->_id]);
+            $this->worker->connection = null;
         }
         // 标记该连接已经关闭
        $this->_status = self::STATUS_CLOSED;

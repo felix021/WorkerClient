@@ -11,15 +11,15 @@
  * @link http://www.workerman.net/
  * @license http://www.opensource.org/licenses/mit-license.php MIT License
  */
-namespace Workerman\Lib;
-use \Workerman\Events\EventInterface;
+namespace WorkerClient\Lib;
+use \WorkerClient\Events\EventInterface;
 use \Exception;
 
 /**
  * 定时器
  * 
  * example:
- * Workerman\Lib\Timer::add($time_interval, callback, array($arg1, $arg2..));
+ * WorkerClient\Lib\Timer::add($time_interval, callback, array($arg1, $arg2..));
  */
 class Timer 
 {
@@ -53,7 +53,7 @@ class Timer
         }
         else 
         {
-            pcntl_signal(SIGALRM, array('\Workerman\Lib\Timer', 'signalHandle'), false);
+            pcntl_signal(SIGALRM, array('\WorkerClient\Lib\Timer', 'signalHandle'), false);
         }
     }
     
