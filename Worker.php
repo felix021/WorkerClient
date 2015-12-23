@@ -85,7 +85,7 @@ class Worker
      * worker的名称，用于在运行status命令时标记进程
      * @var string
      */
-    public $name = 'none';
+    public $name = '';
     
     /**
      * 设置当前worker实例的进程数
@@ -359,14 +359,14 @@ class Worker
         if(empty(self::$pidFile))
         {
             $backtrace = debug_backtrace();
-            self::$_startFile = $backtrace[count($backtrace)-1]['file'];
-            self::$pidFile = __DIR__ . "/../".str_replace('/', '_', self::$_startFile).".pid";
+            global $argv;
+            self::$_startFile = getcwd() . '/' . $argv[0];
+            self::$pidFile = self::$_startFile . '.pid';
         }
         // 没有设置日志文件，则生成一个默认值
         if(empty(self::$logFile))
         {
-            $pi = pathinfo(self::$_startFile);
-            self::$logFile = sprintf("%s/%s_%s.log", $pi['dirname'], $pi['filename'], $pi['extension']);
+            self::$logFile = self::$_startFile . '.log';
         }
         // 标记状态为启动中
         self::$_status = self::STATUS_STARTING;
@@ -394,7 +394,7 @@ class Worker
             // 没有设置worker名称，则使用none代替
             if(empty($worker->name))
             {
-                $worker->name = 'none';
+                $worker->name = basename(self::$_startFile);
             }
             // 获得所有worker名称中最大长度
             $worker_name_length = strlen($worker->name);
@@ -452,11 +452,20 @@ class Worker
         echo "\033[1A\n\033[K-----------------------\033[47;30m WORKERCLIENT \033[0m-----------------------------\n\033[0m";
         echo 'WorkerClient version:' , Worker::VERSION , "          PHP version:",PHP_VERSION,"\n";
         echo "------------------------\033[47;30m WORKERS \033[0m-------------------------------\n";
-        echo "\033[47;30muser\033[0m",str_pad('', self::$_maxUserNameLength+2-strlen('user')), "\033[47;30mworker\033[0m",str_pad('', self::$_maxWorkerNameLength+2-strlen('worker')), "\033[47;30mlisten\033[0m",str_pad('', self::$_maxSocketNameLength+2-strlen('listen')), "\033[47;30mprocesses\033[0m \033[47;30m","status\033[0m\n";
+        echo "\033[47;30muser\033[0m",
+            str_pad('', self::$_maxUserNameLength+2-strlen('user')),
+            "\033[47;30mworker\033[0m",
+            str_pad('', self::$_maxWorkerNameLength+2-strlen('worker')),
+            "\033[47;30mlisten\033[0m",str_pad('', self::$_maxSocketNameLength+2-strlen('listen')),
+            "\033[47;30mprocesses\033[0m \033[47;30m","status\033[0m\n";
         /** @var static $worker */
         foreach(self::$_workers as $worker)
         {
-            echo str_pad($worker->user, self::$_maxUserNameLength+2),str_pad($worker->name, self::$_maxWorkerNameLength+2),str_pad($worker->getSocketName(), self::$_maxSocketNameLength+2), str_pad(' '.$worker->count, 9), " \033[32;40m [OK] \033[0m\n";;
+            echo str_pad($worker->user, self::$_maxUserNameLength+2),
+                str_pad($worker->name, self::$_maxWorkerNameLength+2),
+                str_pad($worker->getSocketName(), self::$_maxSocketNameLength+2),
+                str_pad(' '.$worker->count, 9),
+                " \033[32;40m [OK] \033[0m\n";;
         }
         echo "----------------------------------------------------------------\n";
         if(self::$daemonize)
@@ -768,7 +777,7 @@ class Worker
             {
                 if(empty($worker->name))
                 {
-                    $worker->name = $worker->getSocketName();
+                    $worker->name = basename(self::$_startFile);
                 }
                 $worker_name_length = strlen($worker->name);
                 if(self::$_maxWorkerNameLength < $worker_name_length)
@@ -1113,7 +1122,7 @@ class Worker
                 }
             }
             file_put_contents(self::$_statisticsFile,  "---------------------------------------PROCESS STATUS-------------------------------------------\n", FILE_APPEND);
-            file_put_contents(self::$_statisticsFile, "pid\tmemory  ".str_pad('listening', self::$_maxSocketNameLength)." ".str_pad('worker_name', self::$_maxWorkerNameLength)." connections ".str_pad('total_request', 13)." ".str_pad('send_fail', 9)." ".str_pad('throw_exception', 15)."\n", FILE_APPEND);
+            file_put_contents(self::$_statisticsFile, "pid\tmemory  ".str_pad('watching', self::$_maxSocketNameLength)." ".str_pad('worker_name', self::$_maxWorkerNameLength)." connections ".str_pad('total_request', 13)." ".str_pad('send_fail', 9)." ".str_pad('throw_exception', 15)."\n", FILE_APPEND);
             
             chmod(self::$_statisticsFile, 0722);
             
@@ -1126,8 +1135,14 @@ class Worker
         
         // 子进程部分
         $worker = current(self::$_workers);
-        $wrker_status_str = posix_getpid()."\t".str_pad(round(memory_get_usage(true)/(1024*1024),2)."M", 7)." " .str_pad($worker->getSocketName(), self::$_maxSocketNameLength) ." ".str_pad(($worker->name === $worker->getSocketName() ? 'none' : $worker->name), self::$_maxWorkerNameLength)." ";
-        $wrker_status_str .= str_pad(ConnectionInterface::$statistics['connection_count'], 11)." ".str_pad(ConnectionInterface::$statistics['total_request'], 14)." ".str_pad(ConnectionInterface::$statistics['send_fail'],9)." ".str_pad(ConnectionInterface::$statistics['throw_exception'],15)."\n";
+        $wrker_status_str = posix_getpid() . "\t"
+            .str_pad(round(memory_get_usage(true) / (1024 * 1024), 2) . "M", 7) . " "
+            .str_pad($worker->getSocketName(), self::$_maxSocketNameLength) . " "
+            .str_pad($worker->name, self::$_maxWorkerNameLength)." "
+            .str_pad(ConnectionInterface::$statistics['connection_count'], 11) . " "
+            .str_pad(ConnectionInterface::$statistics['total_request'], 14) . " "
+            .str_pad(ConnectionInterface::$statistics['send_fail'],9) . " "
+            .str_pad(ConnectionInterface::$statistics['throw_exception'], 15) . "\n";
         file_put_contents(self::$_statisticsFile, $wrker_status_str, FILE_APPEND);
     }
     

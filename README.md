@@ -16,7 +16,7 @@ test.php
 ```php
 //examples on how to use WorkerClient
 
-require_once './WorkerClient/Autoloader.php';
+require_once __DIR__ . '/WorkerClient/Autoloader.php';
 use WorkerClient\Worker;
 
 // Create a Worker Process Manager server
@@ -25,10 +25,7 @@ $worker = new Worker("redis://127.0.0.1:6379");
 // number of worker processes (master process excluded)
 $worker->count = 4;
 
-$channel = $argv[2]; //php test.php start channel
-
-//if $logFile not specified, "test_php.log" will be used
-Worker::$logFile = sprintf("%s/channel_%s.log", __DIR__, $channel);
+$channel = pathinfo($argv[0])['filename'];
 
 function brPop($connection)
 {
