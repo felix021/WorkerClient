@@ -52,6 +52,8 @@ class TcpConnection extends ConnectionInterface
      * @var int
      */
     const STATUS_CLOSED = 8;
+
+    const IGNORE_SEND_BUFFER = true;
     
     /**
      * 当对端发来数据时，如果设置了$onMessage回调，则执行
@@ -181,6 +183,8 @@ class TcpConnection extends ConnectionInterface
      * @var bool
      */
     protected $_isPaused = false;
+
+    public $isWorking = false;
     
     /**
      * 构造函数
@@ -448,7 +452,7 @@ class TcpConnection extends ConnectionInterface
                // 处理数据包
                try
                {
-                   call_user_func($this->onMessage, $this, $parser::decode($one_request_buffer, $this));
+                   $this->dealMessage($parser::decode($one_request_buffer, $this));
                }
                catch(Exception $e)
                {
@@ -473,7 +477,7 @@ class TcpConnection extends ConnectionInterface
         }
         try 
         {
-           call_user_func($this->onMessage, $this, $this->_recvBuffer);
+            $this->dealMessage($this->_recvBuffer);
         }
         catch(Exception $e)
         {
@@ -482,6 +486,13 @@ class TcpConnection extends ConnectionInterface
         }
         // 清空缓冲区
         $this->_recvBuffer = '';
+    }
+
+    public function dealMessage($message)
+    {
+        $this->isWorking = true;
+        call_user_func($this->onMessage, $this, $message);
+        $this->isWorking = false;
     }
 
     /**
@@ -566,7 +577,7 @@ class TcpConnection extends ConnectionInterface
      * @param mixed $data
      * @void
      */
-    public function close($data = null)
+    public function close($data = null, $ignore_send_buffer = false)
     {
         if($this->_status === self::STATUS_CLOSING || $this->_status === self::STATUS_CLOSED)
         {
@@ -580,7 +591,7 @@ class TcpConnection extends ConnectionInterface
             }
             $this->_status = self::STATUS_CLOSING;
         }
-        if($this->_sendBuffer === '')
+        if($ignore_send_buffer or $this->_sendBuffer === '')
         {
            $this->destroy();
         }

@@ -1,4 +1,4 @@
-<?php 
+<?php
 /**
  * This file is part of workerman.
  *
@@ -12,6 +12,7 @@
  * @license http://www.opensource.org/licenses/mit-license.php MIT License
  */
 namespace WorkerClient\Protocols;
+
 use \WorkerClient\Connection\TcpConnection;
 
 /**
@@ -29,10 +30,32 @@ class Redis
     public static function input($buffer, TcpConnection $connection)
     {
         $lines = explode("\n", $buffer);
-        if (count($lines) < 5) {
+        if (count($lines) <= 1) { //包不完整
             return 0;
         }
-        return strlen(join("\n", $lines));
+
+        if ($lines[0]{0} !== '*') { //包错误
+            return -1;
+        }
+
+        $nr_args = intval(substr($lines[0], 1));
+        if ($nr_args < 0) { //brPop超时
+            return strlen($lines[0]) + 1;
+        }
+
+        if ($nr_args != 2) { //包错误
+            return -1;
+        }
+
+        if (count($lines) < 5) { //不够长
+            return 0;
+        }
+
+        $length = 0;
+        for ($i = 0; $i < 5; $i++) {
+            $length += strlen($lines[$i]) + 1;
+        }
+        return $length;
     }
     
     /**
@@ -54,7 +77,10 @@ class Redis
     public static function decode($buffer)
     {
         $lines = explode("\n", $buffer);
-        $data_len = intval(substr($lines[3], 1));
-        return substr($lines[4], 0, $data_len);
+        if (count($lines) == 2) { //brPop超时
+            return null;
+        } else {
+            return substr($lines[4], 0, -1);
+        }
     }
 }

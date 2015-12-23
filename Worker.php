@@ -67,7 +67,7 @@ class Worker
      * 如果对应进程仍然未重启则强行杀死
      * @var int
      */
-    const KILL_WORKER_TIMER_TIME = 1;
+    const KILL_WORKER_TIMER_TIME = 5;
     
     /**
      * 默认的backlog，即内核中用于存放未被进程认领（accept）的连接队列长度
@@ -169,7 +169,7 @@ class Worker
     public $onWorkerReload = null;
     
     /**
-     * 所有的客户端连接
+     * 客户端连接
      * @var array
      */
     public $connection = null;
@@ -1082,11 +1082,18 @@ class Worker
         {
             // 执行stop逻辑
             /** @var static $worker */
-            foreach(self::$_workers as $worker)
-            {
+            $safe_exit = true;
+            foreach (self::$_workers as $worker) {
                 $worker->stop();
+                if ($worker->connection and $worker->connection->isWorking) {
+                    //还不想放弃治疗；但是接下来的SIGKILL就没办法了
+                    self::log("WorkerClient: is still working");
+                    $safe_exit = false;
+                }
             }
-            exit(0);
+            if ($safe_exit) {
+                exit(0);
+            }
         }
     }
     
@@ -1408,5 +1415,10 @@ class Worker
             $seconds = round($seconds, 6);
         }
         return $seconds;
+    }
+
+    public static function getStatus()
+    {
+        return self::$_status;
     }
 }
