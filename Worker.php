@@ -22,6 +22,7 @@ use \WorkerClient\Events\Select;
 use \WorkerClient\Events\EventInterface;
 use \WorkerClient\Connection\ConnectionInterface;
 use \WorkerClient\Connection\TcpConnection;
+use \WorkerClient\Connection\AsyncTcpConnection;
 use \WorkerClient\Lib\Timer;
 use \Exception;
 
@@ -229,14 +230,8 @@ class Worker
     protected static $_masterPid = 0;
     
     /**
-     * 监听的socket
-     * @var resource
-     */
-    protected $_mainSocket = null;
-    
-    /**
      * socket名称，包括应用层协议+ip+端口号，在初始化worker时设置 
-     * 值类似 http://0.0.0.0:80
+     * 值类似 redis://127.0.0.1:6379
      * @var string
      */
     protected $_socketName = '';
@@ -809,8 +804,8 @@ class Worker
         // 子进程运行
         elseif(0 === $pid)
         {
-            //连接Server
-            $worker->connect();
+            // 设置自动加载根目录
+            Autoloader::setRootPath($worker->_appInitPath);
 
             // 启动过程中尝试重定向标准输出
             if(self::$_status === self::STATUS_STARTING)
@@ -1254,27 +1249,15 @@ class Worker
      */
     public function connect()
     {
-        if(!$this->_socketName)
-        {
-            return;
-        }
- 
-        // 设置自动加载根目录  
-        Autoloader::setRootPath($this->_appInitPath);
-
         // 获得应用层通讯协议以及目标服务器的地址
         $url = parse_url($this->_socketName);
         if (false === $url) {
             throw new Exception("invalid socketName");
         }
 
-        $this->scheme   = $scheme = @$url['scheme'];
-        $this->host     = @$url['host'];
-        $this->port     = @$url['port'];
-        $this->path     = @$url['path'];
-
-        //如果有指定应用层协议，则检查对应的协议类是否存在
-        if($scheme)
+        // 如果有指定应用层协议，则检查对应的协议类是否存在
+        $scheme = @$url['scheme'];
+        if($scheme !== 'tcp')
         {
             $scheme = ucfirst($scheme);
             $this->_protocol = '\\Protocols\\'.$scheme;
@@ -1288,27 +1271,50 @@ class Worker
             }
         }
 
-        // flag
-        $errno = 0;
-        $errmsg = '';
-        $this->_mainSocket = @fsockopen($this->host, $this->port, $errno, $errmsg);
-        if(!$this->_mainSocket)
+        // 创建异步连接
+        $address = @$url['host'] . ':' . @$url['port'];
+        $socket = @stream_socket_client("tcp://{$address}", $errno, $errstr);
+        if(!$socket)
         {
-            sleep(1);
-            self::log("connect to server failed");
-            throw new Exception($errmsg, $errno);
+            sleep(1); //避免不间断重练
+            throw new Exception("connect to server failed");
         }
-        
+
         // 尝试打开tcp的keepalive，关闭TCP Nagle算法
         if(function_exists('socket_import_stream'))
         {
-            $socket   = socket_import_stream($this->_mainSocket );
-            @socket_set_option($socket, SOL_SOCKET, SO_KEEPALIVE, 1);
-            @socket_set_option($socket, SOL_SOCKET, TCP_NODELAY, 1);
+            $_socket   = socket_import_stream($socket);
+            @socket_set_option($_socket, SOL_SOCKET, SO_KEEPALIVE, 1);
+            @socket_set_option($_socket, SOL_SOCKET, TCP_NODELAY, 1);
         }
-        
+
         // 设置非阻塞
-        stream_set_blocking($this->_mainSocket, 0);
+        stream_set_blocking($socket, 0);
+
+        $connection = new TcpConnection($socket, $address);
+        $this->connection = $connection;
+        
+        $connection->worker = $this;
+        $connection->protocol = $this->_protocol;
+        $connection->onMessage = $this->onMessage;
+        $connection->onClose = $this->onClose;
+        $connection->onError = $this->onError;
+        $connection->onBufferDrain = $this->onBufferDrain;
+        $connection->onBufferFull = $this->onBufferFull;
+
+        // 如果有设置连接回调，则执行
+        if($this->onConnect)
+        {
+            try
+            {
+                call_user_func($this->onConnect, $connection);
+            }
+            catch(Exception $e)
+            {
+                ConnectionInterface::$statistics['throw_exception']++;
+                self::log($e);
+            }
+        }
     }
     
     /**
@@ -1345,7 +1351,7 @@ class Worker
             {
                 self::$globalEvent = new Select();
             }
-            $this->addConnection();
+            $this->connect();
         }
         
         // 重新安装事件处理函数，使用全局事件轮询监听信号事件
@@ -1374,41 +1380,6 @@ class Worker
         if($this->onWorkerStop)
         {
             call_user_func($this->onWorkerStop, $this);
-        }
-        // 删除相关监听事件，关闭_mainSocket
-        self::$globalEvent->del($this->_mainSocket, EventInterface::EV_READ);
-        @fclose($this->_mainSocket);
-    }
-
-    /**
-     * 连接服务器
-     * @return void
-     */
-    public function addConnection()
-    {
-        // 初始化连接对象
-        $connection = new TcpConnection($this->_mainSocket, $this->host . ':' . $this->port);
-        $this->connection = $connection;
-        $connection->worker = $this;
-        $connection->protocol = $this->_protocol;
-        $connection->onMessage = $this->onMessage;
-        $connection->onClose = $this->onClose;
-        $connection->onError = $this->onError;
-        $connection->onBufferDrain = $this->onBufferDrain;
-        $connection->onBufferFull = $this->onBufferFull;
-        
-        // 如果有设置连接回调，则执行
-        if($this->onConnect)
-        {
-            try
-            {
-                call_user_func($this->onConnect, $connection);
-            }
-            catch(Exception $e)
-            {
-                ConnectionInterface::$statistics['throw_exception']++;
-                self::log($e);
-            }
         }
     }
 
