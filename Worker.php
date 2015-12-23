@@ -580,7 +580,7 @@ class Worker
                         // 检查是否超过$timeout时间
                         if(time() - $start_time >= $timeout)
                         {
-                            self::log("WorkerClient[$start_file] stop fail");
+                            self::log("WorkerClient[$start_file] stop worker instantly fail, will try SIGKILL");
                             exit;
                         }
                         usleep(10000);
@@ -1082,18 +1082,10 @@ class Worker
         {
             // 执行stop逻辑
             /** @var static $worker */
-            $safe_exit = true;
             foreach (self::$_workers as $worker) {
                 $worker->stop();
-                if ($worker->connection and $worker->connection->isWorking) {
-                    //还不想放弃治疗；但是接下来的SIGKILL就没办法了
-                    self::log("WorkerClient: is still working");
-                    $safe_exit = false;
-                }
             }
-            if ($safe_exit) {
-                exit(0);
-            }
+            exit(0);
         }
     }
     
