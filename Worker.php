@@ -527,6 +527,7 @@ class Worker
             else
             {
                 $mode = 'in DEBUG mode';
+                self::$force_delayed_kill = true;
             }
         }
         self::log("WorkerClient[$start_file] $command $mode");

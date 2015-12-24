@@ -34,12 +34,18 @@ class Redis
             return 0;
         }
 
-        if ($lines[0]{0} !== '*') { //包错误
-            return -1;
+        if ($lines[0]{0} !== '*') {
+            if (substr($lines[0], 0, 3) == '+OK') { //认证成功
+                return strlen($lines[0]) + 1;
+            } elseif (substr($lines[0]{0}, 0, 4) === '-ERR') { //认证失败
+                return strlen($lines[0]) + 1;
+            } else { //包错误
+                return -1;
+            }
         }
 
         $nr_args = intval(substr($lines[0], 1));
-        if ($nr_args < 0) { //brPop超时
+        if ($nr_args <= 0) { //brPop超时(redis返回-1, 腾讯云返回0)
             return strlen($lines[0]) + 1;
         }
 
@@ -77,8 +83,14 @@ class Redis
     public static function decode($buffer)
     {
         $lines = explode("\n", $buffer);
-        if (count($lines) == 2) { //brPop超时
-            return null;
+        if (count($lines) == 2) {
+            if (substr($lines[0], 0, 3) === '+OK') { //认证成功
+                return true;
+            } elseif (substr($lines[0], 0, 4) === '-ERR') {
+                return false; //认证失败
+            } else { //brPop超时
+                return null;
+            }
         } else {
             return substr($lines[4], 0, -1);
         }
