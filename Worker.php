@@ -69,6 +69,12 @@ class Worker
      */
     const KILL_WORKER_TIMER_TIME = 5;
     
+    /* 连接仍然活跃的时候，延迟退出 */
+    const EXIT_RETRY_DELAY  = 1;
+
+    /* 在stop()方法调用中指定该参数，则不调用exit */
+    const DELAY_EXIT        = false;
+
     /**
      * 默认的backlog，即内核中用于存放未被进程认领（accept）的连接队列长度
      * @var int
@@ -193,6 +199,13 @@ class Worker
      * @var bool
      */
     public static $daemonize = false;
+
+    /**
+     * 是否强制reload/stop/restart
+     * 例如 php test.php reload -f
+     * @var bool
+     */
+    public static $force_delayed_kill = false;
     
     /**
      * 重定向标准输出，即将所有echo、var_dump等终端输出写到对应文件中
@@ -222,6 +235,8 @@ class Worker
      * @var Select/Libevent
      */
     public static $globalEvent = null;
+    protected static $receiced_signal = null;
+    protected static $delay_signal_installed = false;
     
     /**
      * 主进程pid
@@ -498,7 +513,7 @@ class Worker
         // 命令
         $command = trim($argv[1]);
         
-        // 子命令，目前只支持-d
+        // 子命令，目前只支持-d -f
         $command2 = isset($argv[2]) ? $argv[2] : '';
         
         // 记录日志
@@ -526,10 +541,17 @@ class Worker
                 self::log("WorkerClient[$start_file] already running");
                 exit;
             }
+            else if ($command2 === '-f')
+            {
+                //向主进程发送SIGHUP信号，启用强制退出
+                self::$force_delayed_kill = true;
+                self::log("WorkerClient[$start_file] turn on force_delayed_kill");
+                $master_is_alive && posix_kill($master_pid, SIGHUP);
+            }
         }
         elseif($command !== 'start' && $command !== 'restart')
         {
-            self::log("WorkerClient[$start_file] not run");
+            self::log("WorkerClient[$start_file] not running");
         }
         
         // 根据命令做相应处理
@@ -565,8 +587,8 @@ class Worker
             case 'restart':
             // 停止 workeran
             case 'stop':
-                self::log("WorkerClient[$start_file] is stoping ...");
-                // 想主进程发送SIGINT信号，主进程会向所有子进程发送SIGINT信号
+                self::log("WorkerClient[$start_file] is stopping ...");
+                // 向主进程发送SIGINT信号，主进程会向所有子进程发送SIGINT信号
                 $master_pid && posix_kill($master_pid, SIGINT);
                 // 如果 $timeout 秒后主进程没有退出则展示失败界面
                 $timeout = 5;
@@ -580,7 +602,11 @@ class Worker
                         // 检查是否超过$timeout时间
                         if(time() - $start_time >= $timeout)
                         {
-                            self::log("WorkerClient[$start_file] stop worker instantly fail, will try SIGKILL");
+                            self::log("WorkerClient[$start_file] stop worker instantly fail");
+                            if (self::$force_delayed_kill)
+                            {
+                                self::log("WorkerClient[$start_file] SIGKILL will be sent to alive workers.");
+                            }
                             exit;
                         }
                         usleep(10000);
@@ -617,6 +643,8 @@ class Worker
      */
     protected static function installSignal()
     {
+        // force_delayed_kill
+        pcntl_signal(SIGHUP,  array('\WorkerClient\Worker', 'signalHandler'), false);
         // stop
         pcntl_signal(SIGINT,  array('\WorkerClient\Worker', 'signalHandler'), false);
         // reload
@@ -633,12 +661,17 @@ class Worker
      */
     protected static function reinstallSignal()
     {
+        // uninstall force signal handler
+        pcntl_signal(SIGHUP,  SIG_IGN, false);
         // uninstall stop signal handler
         pcntl_signal(SIGINT,  SIG_IGN, false);
         // uninstall reload signal handler
         pcntl_signal(SIGUSR1, SIG_IGN, false);
         // uninstall  status signal handler
         pcntl_signal(SIGUSR2, SIG_IGN, false);
+
+        // reinstall force signal handler
+        self::$globalEvent->add(SIGHUP, EventInterface::EV_SIGNAL, array('\WorkerClient\Worker', 'signalHandler'));
         // reinstall stop signal handler
         self::$globalEvent->add(SIGINT, EventInterface::EV_SIGNAL, array('\WorkerClient\Worker', 'signalHandler'));
         //  uninstall  reload signal handler
@@ -653,8 +686,12 @@ class Worker
      */
     public static function signalHandler($signal)
     {
+        self::$receiced_signal = $signal;
         switch($signal)
         {
+            case SIGHUP:
+                self::$force_delayed_kill = true;
+                break;
             // stop
             case SIGINT:
                 self::stopAll();
@@ -1037,27 +1074,44 @@ class Worker
             // 继续执行平滑重启流程
             $one_worker_pid = current(self::$_pidsToRestart );
             // 给子进程发送平滑重启信号
-            posix_kill($one_worker_pid, SIGUSR1);
-            // 定时器，如果子进程在KILL_WORKER_TIMER_TIME秒后没有退出，则强行杀死
-            Timer::add(self::KILL_WORKER_TIMER_TIME, 'posix_kill', array($one_worker_pid, SIGKILL), false);
+            self::killWorker($one_worker_pid, SIGUSR1);
         }
         // 子进程部分
         else
         {
             // 如果当前worker的reloadable属性为真，则执行退出
             $worker = current(self::$_workers);
-            // 如果有设置Reload回调，则执行
-            if($worker->onWorkerReload)
+            if ($worker)
             {
-                call_user_func($worker->onWorkerReload, $worker);
-            }
-            if($worker->reloadable)
-            {
-                self::stopAll();
+                $pid = posix_getpid();
+                echo "{$pid} onWorkerReload\n";
+                // 如果有设置Reload回调，则执行
+                if($worker->onWorkerReload)
+                {
+                    call_user_func($worker->onWorkerReload, $worker);
+                }
+                if($worker->reloadable)
+                {
+                    self::stopAll();
+                }
             }
         }
-    } 
+    }
     
+    /*
+     * 给pid发送指定信号
+     * 如果有需要，延时发送 SIGKILL
+     */
+    protected static function killWorker($pid, $signal)
+    {
+        posix_kill($pid, $signal);
+        if (self::$force_delayed_kill)
+        {
+            // 定时器，如果子进程在KILL_WORKER_TIMER_TIME秒后没有退出，则强行杀死
+            Timer::add(self::KILL_WORKER_TIMER_TIME, 'posix_kill', array($pid, SIGKILL), false);
+        }
+    }
+
     /**
      * 执行关闭流程
      * @return void
@@ -1073,8 +1127,7 @@ class Worker
             // 向所有子进程发送SIGINT信号，表明关闭服务
             foreach($worker_pid_array as $worker_pid)
             {
-                posix_kill($worker_pid, SIGINT);
-                Timer::add(self::KILL_WORKER_TIMER_TIME, 'posix_kill', array($worker_pid, SIGKILL),false);
+                self::killWorker($worker_pid, SIGINT);
             }
         }
         // 子进程部分
@@ -1082,10 +1135,31 @@ class Worker
         {
             // 执行stop逻辑
             /** @var static $worker */
+            $safe_exit = true;
             foreach (self::$_workers as $worker) {
-                $worker->stop();
+                if ($worker->connection and $worker->connection->getStatus() !== TcpConnection::STATUS_CLOSED)
+                {
+                    $safe_exit = false;
+                }
+                else
+                {
+                    $worker->stop(self::DELAY_EXIT);
+                }
             }
-            exit(0);
+
+            if ($safe_exit)
+            {
+                exit(0);
+            }
+            else //不想放弃治疗
+            {
+                $pid = posix_getpid();
+                self::log("WorkerClient[{$pid}] is still working, exit delayed.");
+                if (self::$delay_signal_installed == false) {
+                    Timer::add(self::EXIT_RETRY_DELAY, 'posix_kill', array($pid, self::$receiced_signal), true);
+                    self::$delay_signal_installed = true;
+                }
+            }
         }
     }
     
@@ -1388,12 +1462,17 @@ class Worker
      * 停止当前worker实例
      * @return void
      */
-    public function stop()
+    public function stop($exit_instantly = true)
     {
         // 如果有设置进程终止回调，则执行
         if($this->onWorkerStop)
         {
             call_user_func($this->onWorkerStop, $this);
+        }
+
+        if ($exit_instantly)
+        {
+            exit(0);
         }
     }
 

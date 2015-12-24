@@ -676,4 +676,9 @@ class TcpConnection extends ConnectionInterface
         // 统计数据
         self::$statistics['connection_count']--;
     }
+
+    public function getStatus()
+    {
+        return $this->_status;
+    }
 }

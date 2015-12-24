@@ -60,7 +60,6 @@ $worker->onClose = function($connection)
     echo "Server Closed Connection, stop this worker.\n";
     //Master process will start a new worker process
     $connection->worker->stop(); 
-    exit(1);
 };
 
 // Run worker
