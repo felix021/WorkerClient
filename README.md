@@ -30,7 +30,7 @@ $channel = pathinfo($argv[0])['filename'];
 function brPop($connection)
 {
     global $channel;
-    $connection->send("brPop {$channel} 0\n", true);
+    $connection->send("brPop {$channel} 3\n", true); #timeout = 3 seconds
 }
 
 // Emitted when new connection come
@@ -44,7 +44,14 @@ $worker->onConnect = function($connection)
 $worker->onMessage = function($connection, $data)
 {
     echo "brPop: $data\n";
-    brPop($connection);
+    if (!is_null($data)) {
+        //do something
+    }
+    if (Worker::getStatus() == Worker::STATUS_RUNNING) {
+        brPop($connection);
+    } else {
+        $connection->close();
+    }
 };
 
 // Emitted when connection closed
